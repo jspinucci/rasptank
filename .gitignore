@@ -1,1 +1,24 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Camera recordings
+recordings/
+images/
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Flask session files
+instance/
+
+# VS Code
+.vscode/
 .venv/
