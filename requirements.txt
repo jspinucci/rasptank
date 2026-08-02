@@ -1,2 +1,16 @@
 flask>=3.0.0
 Pillow>=10.0.0
+
+Flask
+Flask-SocketIO
+python-socketio
+eventlet
+opencv-python
+numpy
+RPi.GPIO
+Adafruit-Blinka
+adafruit-circuitpython-servokit
+Pillow
+
+pvporcupine
+pyaudio
