@@ -1,0 +1,14 @@
+[Unit]
+Description=RaspTank Control System
+After=network.target
+
+[Service]
+ExecStart=/home/jspinucci/robot/.venv/bin/python3 /home/jspinucci/rasptank/app.py
+WorkingDirectory=/home/jspinucci/rasptank
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=jspinucci
+
+[Install]
+WantedBy=multi-user.target
