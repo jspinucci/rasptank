@@ -16,11 +16,9 @@ from flask import (
 )
 
 from robot.motors import MotorController
-from robot.servos import ServoController
+from robot.servos import ServoController, ArmServoController
 from robot.camera import CameraStream
 from robot.wakeword import WakewordBridge
-
-from robot.servos import ServoController, ArmServoController
 
 import signal
 import sys
@@ -33,6 +31,8 @@ from PIL import Image, ImageDraw, ImageFont
 from leds import LEDController
 
 import os
+
+from flask_socketio import SocketIO, emit
 
 # -----------------------------
 # GLOBAL CAMERA + RECORDING STATE
@@ -58,7 +58,11 @@ i2c = busio.I2C(board.SCL, board.SDA)
 oled = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c)
 font = ImageFont.load_default()
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("rasptank.app")
 
 armservos: ArmServoController | None = None
 
@@ -73,12 +77,6 @@ PAN_SPEED = 2.0
 TILT_SPEED = 2.0
 DRIVE_SPEED = 0.05
 TURN_SPEED = 0.05
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-log = logging.getLogger("rasptank.app")
 
 # LED startup animation
 logging.info("Running startup LED animation...")
@@ -176,6 +174,8 @@ draw_robot_face(eye_dx=5)
 # -----------------------------
 app = Flask(__name__)
 
+socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*", websocket=True, transport=["websocket"])
+#socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 motors: MotorController | None = None
 servos: ServoController | None = None
 wakeword: WakewordBridge | None = None
@@ -265,7 +265,6 @@ def snapshot():
 # -----------------------------
 # RECORDING THREAD (OpenCV VideoWriter)
 # -----------------------------
-
 def recording_worker(filename):
     global video_writer, stop_recording_flag
 
@@ -273,20 +272,15 @@ def recording_worker(filename):
 
     while not stop_recording_flag:
         try:
-            # Get JPEG frame from CameraStream
             jpeg_bytes = next(cam.frames())
 
-            # Decode JPEG → BGR
             np_arr = np.frombuffer(jpeg_bytes, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
             if frame is None:
                 continue
 
-            # Resize to recording resolution
             resized = cv2.resize(frame, (REC_WIDTH, REC_HEIGHT))
-
-            # Write to AVI
             video_writer.write(resized)
 
         except Exception:
@@ -307,7 +301,6 @@ def start_recording():
 
     filename = f"recordings/recording_{int(time.time())}.avi"
 
-    # OpenCV VideoWriter
     fourcc = cv2.VideoWriter_fourcc(*"MJPG")
     video_writer = cv2.VideoWriter(filename, fourcc, REC_FPS, (REC_WIDTH, REC_HEIGHT))
 
@@ -337,7 +330,7 @@ def stop_recording():
     return {"ok": True}
 
 # -----------------------------
-# SERVO + MOTOR ROUTES (unchanged)
+# SERVO + MOTOR ROUTES
 # -----------------------------
 @app.route("/api/servos/pantilt", methods=["POST"])
 def servos_pantilt():
@@ -345,15 +338,15 @@ def servos_pantilt():
     pan = float(data.get("pan", 0.0))
     tilt = float(data.get("tilt", 0.0))
 
-    servos = get_servos()
+    servos_obj = get_servos()
 
-    current_pan = servos._pan_deg
-    current_tilt = servos._tilt_deg
+    current_pan_local = servos_obj._pan_deg
+    current_tilt_local = servos_obj._tilt_deg
 
-    new_pan = smooth_servo("PAN", current_pan, pan, PAN_STEP)
-    new_tilt = smooth_servo("TILT", current_tilt, tilt, TILT_STEP)
+    new_pan = smooth_servo("PAN", current_pan_local, pan, PAN_STEP)
+    new_tilt = smooth_servo("TILT", current_tilt_local, tilt, TILT_STEP)
 
-    servos.set_pan_tilt(new_pan, new_tilt)
+    servos_obj.set_pan_tilt(new_pan, new_tilt)
     draw_robot_face(eye_dx=int(new_pan / 10))
 
     return jsonify({"ok": True, "pan": new_pan, "tilt": new_tilt})
@@ -374,7 +367,7 @@ def servos_arm():
                 new_angle = smooth_servo(name, current, target, ARM_STEP)
 
                 if name == 'E':
-                    new_angle = max(50, min(100, new_angle)) 
+                    new_angle = max(50, min(100, new_angle))
                 arm.set_servo(name, new_angle)
                 logging.info("Servo mode: api/servo/arm_2")
                 draw_robot_face(eye_dx=5)
@@ -502,7 +495,7 @@ def api_servo_arm():
     angle = float(data.get("angle", 90))
     arm = get_armservos()
     if name == 'E':
-        angle = max(70, min(110, angle)) 
+        angle = max(70, min(110, angle))
     arm.set_servo(name, angle)
     draw_robot_face(eye_dx=10)
     logging.info("Servo mode: api_servo_arm_1")
@@ -565,14 +558,12 @@ def wakeword_events():
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-panTilt = ServoController()
-arm = ArmServoController()
-
 @app.route("/api/servo/pan", methods=["POST"])
 def api_servo_pan():
     data = request.get_json()
     pan = float(data.get("pan", 0))
-    panTilt.set_pan(pan)
+    servos_obj = get_servos()
+    servos_obj.set_pan(pan)
     leds.set_mode("pantilt_motion")
     draw_robot_face(eye_dx=-5)
     return jsonify({"status": "ok", "pan": pan})
@@ -581,7 +572,8 @@ def api_servo_pan():
 def api_servo_tilt():
     data = request.get_json()
     tilt = float(data.get("tilt", 0))
-    panTilt.set_tilt(tilt)
+    servos_obj = get_servos()
+    servos_obj.set_tilt(tilt)
     leds.set_mode("pantilt_motion")
     draw_robot_face(eye_dx=-5)
     return jsonify({"status": "ok", "tilt": tilt})
@@ -589,6 +581,81 @@ def api_servo_tilt():
 @app.route("/api/ping")
 def ping():
     return jsonify({"ok": True, "ts": time.time()})
+
+# -----------------------------
+# WEBSOCKET: MOTOR CONTROL
+# -----------------------------
+@socketio.on("motor")
+def ws_motor(data):
+    global current_speed, current_turn
+
+    drive = float(data.get("drive", 0.0))
+    turn  = float(data.get("turn", 0.0))
+
+    current_speed += drive * DRIVE_SPEED
+    current_turn  += turn  * TURN_SPEED
+
+    current_speed = max(-1.0, min(1.0, current_speed))
+    current_turn  = max(-1.0, min(1.0, current_turn))
+
+    left  = current_speed + current_turn
+    right = current_speed - current_turn
+
+    left  = max(-1.0, min(1.0, left))
+    right = max(-1.0, min(1.0, right))
+
+    get_motors().set_speed(left, right)
+
+@socketio.on("motor_stop")
+def ws_motor_stop():
+    global current_speed, current_turn
+    current_speed = 0.0
+    current_turn  = 0.0
+    get_motors().stop()
+
+# -----------------------------
+# WEBSOCKET: PAN/TILT CONTROL
+# -----------------------------
+@socketio.on("pantilt")
+def ws_pantilt(data):
+    pan = float(data.get("pan", 0.0))
+    tilt = float(data.get("tilt", 0.0))
+
+    pan  = max(-90, min(90, pan))
+    tilt = max(-45, min(45, tilt))
+
+    get_servos().set_pan_tilt(pan, tilt)
+
+@socketio.on("pantilt_incremental")
+def ws_pantilt_incremental(data):
+    global current_pan, current_tilt
+
+    dx = float(data.get("dx", 0.0))
+    dy = float(data.get("dy", 0.0))
+
+    current_pan += dx * PAN_SPEED
+    current_tilt += dy * TILT_SPEED
+
+    current_pan = max(-90, min(90, current_pan))
+    current_tilt = max(-45, min(45, current_tilt))
+
+    get_servos().set_pan_tilt(current_pan, current_tilt)
+
+# -----------------------------
+# WEBSOCKET: ARM SERVOS (A–E)
+# -----------------------------
+@socketio.on("arm")
+def ws_arm(data):
+    arm = get_armservos()
+
+    for name in ["A", "B", "C", "D", "E"]:
+        if name in data:
+            angle = float(data[name])
+
+            if name == "E":
+                angle = max(70, min(110, angle))
+
+            arm.set_servo(name, angle)
 
 def handle_sigint(signum, frame):
     print("SIGINT received, releasing camera...")
@@ -607,6 +674,5 @@ def handle_sigint(signum, frame):
 signal.signal(signal.SIGINT, handle_sigint)
 
 if __name__ == "__main__":
-    log.info("Starting RaspTank control server on 0.0.0.0:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
-
+    log.info("Starting RaspTank control server on 0.0.0.0:5000 (WebSockets enabled)")
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)

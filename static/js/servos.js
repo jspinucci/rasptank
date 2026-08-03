@@ -1,79 +1,71 @@
+let uiReady = false;
+window.addEventListener("load", () => uiReady = true);
 
-// static/js/servos.js
+const lastAngles = {
+    A: 90, B: 90, C: 90, D: 90, E: 90
+};
 
-// Single Socket.IO connection for servo-related control
-const socket = io();
+// servos.js — slider control for servos A–G
 
-// -----------------------------
-// PAN / TILT CONTROL (real-time)
-// -----------------------------
-
-let pan = 0.0;
-let tilt = 0.0;
-
-// Absolute pan/tilt setter (e.g. from sliders)
-function setPanTilt(newPan, newTilt) {
-    pan  = parseFloat(newPan);
-    tilt = parseFloat(newTilt);
-
-    socket.emit("pantilt", { pan, tilt });
-}
-
-// Incremental pan/tilt (e.g. from joystick or buttons)
-function panTiltIncrement(dx, dy) {
-    socket.emit("pantilt_incremental", {
-        dx: parseFloat(dx),
-        dy: parseFloat(dy),
+function postJSON(url, data) {
+    fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
     });
 }
 
-// Example hook for UI sliders:
-// <input type="range" oninput="onPanSlider(this.value)" ...>
-// <input type="range" oninput="onTiltSlider(this.value)" ...>
-function onPanSlider(value) {
-    setPanTilt(value, tilt);
-}
-
-function onTiltSlider(value) {
-    setPanTilt(pan, value);
-}
-
-
 // -----------------------------
-// ARM SERVOS A–E (real-time)
+// ARM SERVOS A–E (0–180°)
 // -----------------------------
 
-// Send absolute positions for arm servos A–E
-// Example: setArmServos({ A: 90, B: 120, E: 80 });
-function setArmServos(angles) {
-    socket.emit("arm", angles);
-}
+["A", "B", "C", "D", "E"].forEach(name => {
+    const slider = document.getElementById(`servo${name}`);
+    if (!slider) return;
 
-// Called by individual servo sliders
-// name: "A", "B", "C", "D", or "E"
-// value: angle in degrees
-function onServoSliderChange(name, value) {
-    const angle = parseFloat(value);
-    const payload = {};
-    payload[name] = angle;
-    socket.emit("arm", payload);
-}
+    let lastSent = 0;
 
+    slider.addEventListener("input", function () {
+        if (!uiReady) return;                  // ignore page-load phantom events
+        if (this.dataset.ignore === "1") return;  // ignore Center Arm resets
 
-// -----------------------------
-// OPTIONAL: Listen for state / errors
-// -----------------------------
+        const angle = parseFloat(this.value);
 
-socket.on("pantilt_state", (state) => {
-    // If you later emit pantilt_state from server, you can sync UI here.
-    // console.log("PanTilt state:", state);
+        // Only send if the value actually changed
+        if (angle === lastAngles[name]) return;
+        lastAngles[name] = angle;
+
+        const now = Date.now();
+        if (now - lastSent < 120) return;      // debounce
+        lastSent = now;
+
+        postJSON("/api/servo/arm", { name: name, angle: angle });
+    });
 });
 
-socket.on("arm_state", (state) => {
-    // If you later emit arm_state from server, you can sync UI here.
-    // console.log("Arm state:", state);
-});
 
-socket.on("error", (err) => {
-    console.error("Servo/WebSocket error:", err);
-});
+// -----------------------------
+// PAN/TILT SERVOS F & G
+// F = pan  (-90 to +90)
+// G = tilt (-45 to +45)
+// -----------------------------
+
+// Servo F (Pan)
+const servoF = document.getElementById("servoF");
+if (servoF) {
+    servoF.addEventListener("input", function () {
+        const pan = parseFloat(this.value);
+        if (!uiReady) return;
+        postJSON("/api/servo/pan", { pan: parseFloat(this.value) });
+    });
+}
+
+// Servo G (Tilt)
+const servoG = document.getElementById("servoG");
+if (servoG) {
+    servoG.addEventListener("input", function () {
+        const tilt = parseFloat(this.value);
+        if (!uiReady) return;
+        postJSON("/api/servo/tilt", { tilt: parseFloat(this.value) });
+    });
+}
