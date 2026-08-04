@@ -1,30 +1,31 @@
 // =========================
-// TANK DRIVE JOYSTICK (INCREMENTAL)
+// TANK DRIVE JOYSTICK (SCALED)
 // =========================
 const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     fetch("/api/motors/incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            drive: y,   // forward/backward increment
-            turn: x     // left/right increment
+            drive: y * 4.0,   // scaled forward/back
+            turn: x * 4.0     // scaled left/right
         })
     });
 });
 
 // =========================
-// CAMERA PAN/TILT JOYSTICK (INCREMENTAL)
+// CAMERA PAN/TILT JOYSTICK (SCALED + CORRECT FIELD NAMES)
 // =========================
 const camJoy = new Joystick("camJoy", "camStick", (x, y) => {
     fetch("/api/servos/pantilt_incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            dx: x,   // pan increment
-            dy: y    // tilt increment
+            dx: x * 30.0,   // scaled pan
+            dy: y * 30.0   // scaled tilt
         })
     });
 });
+
 
 // =========================
 // CAMERA FEED
