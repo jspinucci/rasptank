@@ -17,8 +17,8 @@ class Joystick {
         this.container.addEventListener("mousedown", this.start.bind(this));
         this.container.addEventListener("touchstart", this.start.bind(this));
 
-        document.addEventListener("mousemove", this.move.bind(this));
-        document.addEventListener("touchmove", this.move.bind(this));
+        this.container.addEventListener("mousemove", this.move.bind(this));
+        this.container.addEventListener("touchmove", this.move.bind(this));
 
         document.addEventListener("mouseup", this.end.bind(this));
         document.addEventListener("touchend", this.end.bind(this));
@@ -56,6 +56,10 @@ class Joystick {
         this.callback(normX, normY);
     }
     reset() {
+        this.active = false;
+        this.rawX = 0;
+        this.rawY = 0;
+
         this.stick.style.left = `${this.centerX - this.stick.offsetWidth / 2}px`;
         this.stick.style.top = `${this.centerY - this.stick.offsetHeight / 2}px`;
 
@@ -67,10 +71,6 @@ class Joystick {
 
     end() {
         this.active = false;
-
-//        this.stick.style.left = `${this.centerX - this.stick.offsetWidth / 2}px`;
-//        this.stick.style.top = `${this.centerY - this.stick.offsetHeight / 2}px`;
-
-//        this.callback(0, 0);
+        this.callback(0, 0);
     }
 }

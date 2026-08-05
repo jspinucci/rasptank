@@ -69,10 +69,10 @@ current_tilt = 0.0
 current_speed = 0.0
 current_turn = 0.0
 
-PAN_SPEED = 2.0
-TILT_SPEED = 2.0
-DRIVE_SPEED = 0.05
-TURN_SPEED = 0.05
+PAN_SPEED = 3.0
+TILT_SPEED = 3.0
+DRIVE_SPEED = 0.03
+TURN_SPEED = 0.03
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,9 +99,9 @@ last_update = {
 }
 
 ARM_STEP = 6
-PAN_STEP = 3
-TILT_STEP = 3
-RATE_LIMIT = 0.03
+PAN_STEP = 6
+TILT_STEP = 6
+RATE_LIMIT = 0.01
 
 def smooth_servo(channel_name, current_angle, target_angle, step):
     now = time.time()
@@ -395,7 +395,7 @@ def motors_stop():
         get_motors().stop()
         draw_robot_face()
         leds.set_mode("idle")
-        logging.info("LED mode: motor_stop")
+        logging.info("LED mode: real_motor_stop")
         return jsonify({"ok": True})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -422,7 +422,7 @@ def motors_incremental():
 
     try:
         get_motors().set_speed(left, right)
-
+        logging.info("LED mode: incremental_motor_stop")
         if abs(left) < 0.05 and abs(right) < 0.05:
             leds.set_mode("idle")
         elif left > 0 and right > 0:
@@ -451,6 +451,15 @@ def servos_pantilt_incremental():
     dx = float(data.get("dx", 0.0))
     dy = float(data.get("dy", 0.0))
 
+    # Joystick released → dx=0, dy=0 → STOP
+    if dx == 0.0 and dy == 0.0:
+        leds.set_mode("idle")
+        logging.info("LED mode: idle (joystick end)")
+        return jsonify({"ok": True, "pan": current_pan, "tilt": current_tilt})
+
+    # Joystick moving
+    leds.set_mode("pantilt_motion")
+
     current_pan += dx * PAN_SPEED
     current_tilt += dy * TILT_SPEED
 
@@ -459,7 +468,42 @@ def servos_pantilt_incremental():
 
     try:
         get_servos().set_pan_tilt(current_pan, current_tilt)
+        logging.info(f"pantilt_incremental dx={dx} dy={dy}")
+        return jsonify({"ok": True, "pan": current_pan, "tilt": current_tilt})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+
+"""
+@app.route("/api/servos/pantilt_incremental", methods=["POST"])
+def servos_pantilt_incremental():
+    global current_pan, current_tilt
+
+    data = request.get_json(force=True, silent=True) or {}
+    dx = float(data.get("dx", 0.0))
+    dy = float(data.get("dy", 0.0))
+
+    # If movement is extremely small, treat it as zero
+    if abs(dx) < 0.01 and abs(dy) < 0.01:
+        dx = 0.0
+        dy = 0.0
+        leds.set_mode("idle")
+        logging.info("LED mode: idle")
+
+    else:
         leds.set_mode("pantilt_motion")
+        
+    current_pan += dx * PAN_SPEED
+    current_tilt += dy * TILT_SPEED
+
+    current_pan = max(-90, min(90, current_pan))
+    current_tilt = max(-45, min(45, current_tilt))
+
+    try:
+        get_servos().set_pan_tilt(current_pan, current_tilt)
+        logging.info("LED mode: pantilt_motion_inc")
+#       leds.set_mode("pantilt_motion")
         draw_robot_face(eye_dx=8)
         return jsonify({
             "ok": True,
@@ -468,6 +512,8 @@ def servos_pantilt_incremental():
         })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+"""
 
 @app.route("/api/servos/camera_center", methods=["POST"])
 def servos_center_camera():
@@ -478,6 +524,7 @@ def servos_center_camera():
     try:
         get_servos().center()
         draw_robot_face(eye_dx=-7)
+        logging.info("LED mode: camera_center")
         leds.set_mode("idle")
         draw_robot_face()
         return jsonify({"ok": True})
@@ -489,6 +536,7 @@ def servos_center_arm():
     try:
         get_armservos().center()
         draw_robot_face(eye_dx=-8)
+        logging.info("LED mode: arm_center")
         leds.set_mode("idle")
         draw_robot_face()
         return jsonify({"ok": True})
@@ -573,7 +621,8 @@ def api_servo_pan():
     data = request.get_json()
     pan = float(data.get("pan", 0))
     panTilt.set_pan(pan)
-    leds.set_mode("pantilt_motion")
+    leds.set_mode("pan_motion")
+    logging.info("LED mode: pan_motion")
     draw_robot_face(eye_dx=-5)
     return jsonify({"status": "ok", "pan": pan})
 
@@ -582,7 +631,8 @@ def api_servo_tilt():
     data = request.get_json()
     tilt = float(data.get("tilt", 0))
     panTilt.set_tilt(tilt)
-    leds.set_mode("pantilt_motion")
+    leds.set_mode("tilt_motion")
+    logging.info("LED mode: tilt_motion")
     draw_robot_face(eye_dx=-5)
     return jsonify({"status": "ok", "tilt": tilt})
 
