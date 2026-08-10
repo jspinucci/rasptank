@@ -1,16 +1,45 @@
 // =========================
 // TANK DRIVE JOYSTICK (SCALED)
 // =========================
+
+
 const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
+    if (!tankJoy.active) return;
+
+    // DEADZONE: ignore tiny movements
+    if (Math.abs(x) < 0.2) x = 0;
+    if (Math.abs(y) < 0.2) y = 0;
+
+    // MINIMUM TORQUE: ensure motors overcome stall
+    if (x !== 0) x = Math.sign(x) * 0.3;
+    if (y !== 0) y = Math.sign(y) * 0.3;
+
     fetch("/api/motors/incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            drive: y * 4.0,   // scaled forward/back
-            turn: x * 4.0     // scaled left/right
+            drive: y * 4.0,
+            turn: x * 4.0
         })
     });
 });
+
+
+
+//const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
+//    if(!tankJoy.active) {
+//        return;
+//    }
+
+//    fetch("/api/motors/incremental", {
+//        method: "POST",
+//        headers: { "Content-Type": "application/json" },
+//        body: JSON.stringify({
+//            drive: y * 6.0,   // scaled forward/back
+//            turn: x * 6.0     // scaled left/right
+//        })
+//    });
+//});
 
 // =========================
 // CAMERA PAN/TILT JOYSTICK (SCALED + CORRECT FIELD NAMES)

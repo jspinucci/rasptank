@@ -56,12 +56,11 @@ class Joystick {
         this.callback(normX, normY);
     }
     reset() {
-        this.active = false;
-        this.rawX = 0;
-        this.rawY = 0;
-
+  
         this.stick.style.left = `${this.centerX - this.stick.offsetWidth / 2}px`;
         this.stick.style.top = `${this.centerY - this.stick.offsetHeight / 2}px`;
+
+       if(!this.active) return;
 
         // Send zero movement to backend
         this.callback(0, 0);
@@ -71,6 +70,9 @@ class Joystick {
 
     end() {
         this.active = false;
-        this.callback(0, 0);
-    }
+	if(typeof stopTank === "function") {
+            stopTank();
+        }
+        this.reset();
+     }
 }

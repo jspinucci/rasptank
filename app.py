@@ -422,17 +422,24 @@ def motors_incremental():
 
     try:
         get_motors().set_speed(left, right)
-        logging.info("LED mode: incremental_motor_stop")
+        logging.info("LED mode: incremental_motor_run")
         if abs(left) < 0.05 and abs(right) < 0.05:
+            logging.info("MOTOR mode: incremental_motor_stop") 
             leds.set_mode("idle")
         elif left > 0 and right > 0:
             leds.set_mode("motor_forward")
+            logging.info("MOTOR mode: incremental_motor_forward")
         elif left < 0 and right < 0:
             leds.set_mode("motor_reverse")
+            logging.info("MOTOR mode: incremental_motor_reverse")
         elif left < right:
             leds.set_mode("motor_turn_left")
+            logging.info("MOTOR mode: incremental_motor_left")
         elif right < left:
             leds.set_mode("motor_turn_right")
+            logging.info("MOTOR mode: incremental_motor_right")
+
+        logging.info(f"[MOTOR DEBUG] left={left:.3f}, right={right:.3f}")
 
         return jsonify({
             "ok": True,
