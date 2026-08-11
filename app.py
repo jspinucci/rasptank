@@ -643,6 +643,12 @@ def api_servo_tilt():
     draw_robot_face(eye_dx=-5)
     return jsonify({"status": "ok", "tilt": tilt})
 
+@app.route('/js_debug', methods=['POST'])
+def js_debug():
+    data = request.json
+    print("JS DEBUG:", data)
+    return "OK"
+
 @app.route("/api/ping")
 def ping():
     return jsonify({"ok": True, "ts": time.time()})

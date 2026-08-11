@@ -1,13 +1,5 @@
 // joystick.js — actual joystick implementation
 
-function jsDebug(msg) {
-    fetch("/js_debug", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg })
-    });
-}
-
 class Joystick {
     constructor(containerId, stickId, callback) {
         this.container = document.getElementById(containerId);
@@ -33,7 +25,6 @@ class Joystick {
     }
 
     start(event) {
-	jsDebug("Joystick started");
         this.active = true;
         this.move(event);
     }
@@ -65,8 +56,6 @@ class Joystick {
         this.callback(normX, normY);
     }
     reset() {
-	jsDebug("Joystick reset");
-	jsDebug(`RESET ${this.container.id}`);
         this.active = false;
         this.rawX = 0;
         this.rawY = 0;
@@ -81,17 +70,7 @@ class Joystick {
 
 
     end() {
-        jsDebug("Joystick end");
-        if(this.container.id === "tankJoy")
-	{
-            jsDebug(`Joystick end at ${this.container.id}`);
-            stopTank();
-	    this.reset();
-        }
-        else {
-            jsDebug(`Joystick end else ${this.container.id}`);
-            this.active = false;
-            this.callback(0, 0);
-        }
+        this.active = false;
+        this.callback(0, 0);
     }
 }

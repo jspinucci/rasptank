@@ -26,21 +26,6 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
 
 
 
-//const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
-//    if(!tankJoy.active) {
-//        return;
-//    }
-
-//    fetch("/api/motors/incremental", {
-//        method: "POST",
-//        headers: { "Content-Type": "application/json" },
-//        body: JSON.stringify({
-//            drive: y * 6.0,   // scaled forward/back
-//            turn: x * 6.0     // scaled left/right
-//        })
-//    });
-//});
-
 // =========================
 // CAMERA PAN/TILT JOYSTICK (SCALED + CORRECT FIELD NAMES)
 // =========================
