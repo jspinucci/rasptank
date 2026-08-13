@@ -22,14 +22,22 @@ class Joystick {
 
         this.active = false;
 
-        this.container.addEventListener("mousedown", this.start.bind(this));
-        this.container.addEventListener("touchstart", this.start.bind(this));
+	this.container.addEventListener("mousedown", this.start.bind(this));
+	this.container.addEventListener("touchstart", (event) => {
+	    event.preventDefault();
+	    this.start(event);
+	}, { passive: false });
 
-        this.container.addEventListener("mousemove", this.move.bind(this));
-        this.container.addEventListener("touchmove", this.move.bind(this));
+	this.container.addEventListener("mousemove", this.move.bind(this));
+	this.container.addEventListener("touchmove", (event) => {
+	    event.preventDefault();
+	    this.move(event);
+	}, { passive: false });
 
-        document.addEventListener("mouseup", this.end.bind(this));
-        document.addEventListener("touchend", this.end.bind(this));
+	document.addEventListener("mouseup", this.end.bind(this));
+	document.addEventListener("touchend", (event) => {
+	    this.end(event);
+	}, { passive: true });
     }
 
     start(event) {

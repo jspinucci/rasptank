@@ -2,7 +2,6 @@
 // TANK DRIVE JOYSTICK (SCALED)
 // =========================
 
-
 const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     if (!tankJoy.active) return;
 
@@ -10,9 +9,9 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     if (Math.abs(x) < 0.2) x = 0;
     if (Math.abs(y) < 0.2) y = 0;
 
-    // MINIMUM TORQUE: ensure motors overcome stall
-    if (x !== 0) x = Math.sign(x) * 0.3;
-    if (y !== 0) y = Math.sign(y) * 0.3;
+    // MINIMUM TORQUE: only apply if outside deadzone
+    if (Math.abs(x) >= 0.2) x = Math.sign(x) * 0.3;
+    if (Math.abs(y) >= 0.2) y = Math.sign(y) * 0.3;
 
     fetch("/api/motors/incremental", {
         method: "POST",
@@ -23,7 +22,6 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
         })
     });
 });
-
 
 
 // =========================
