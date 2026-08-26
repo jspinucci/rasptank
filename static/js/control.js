@@ -1,76 +1,239 @@
+// ======================================================
+// A-SERIES CONTROL PIPELINE (A1 → A9)
+// Clean, stable, hardware-independent
+// ======================================================
+
 // =========================
-// TANK DRIVE JOYSTICK (SCALED)
+// A1 DEADZONE + MIN TORQUE
 // =========================
+
+function applyDeadzone(v) {
+    return Math.abs(v) < CONFIG.deadzone ? 0 : v;
+}
+
+function applyMinTorque(v) {
+    return v === 0 ? 0 : Math.sign(v) * CONFIG.minTorque;
+}
+
+// =========================
+// A2 SMOOTHING
+// =========================
+
+let smoothDrive = 0;
+let smoothTurn = 0;
+
+function smoothStep(current, target) {
+    return current + (target - current) * CONFIG.smoothingAccel;
+}
+
+// =========================
+// A3 EXPONENTIAL STEERING CURVE
+// =========================
+
+function expoCurve(v) {
+    return v * v * v;
+}
+
+// =========================
+// A4 DUAL-RATE STEERING
+// =========================
+
+function dualRateSteer(x) {
+    const low = expoCurve(x);
+    const high = x;
+    const blend = Math.abs(x);
+    return low * (1 - blend) + high * blend;
+}
+
+// =========================
+// A5 NONLINEAR THROTTLE CURVE
+// =========================
+
+function throttleCurve(y) {
+    return y * (0.6 + CONFIG.throttleCurveStrength * Math.abs(y));
+}
+
+// =========================
+// A6 TRACTION CONTROL
+// =========================
+
+function tractionControl(left, right) {
+    const slipLimit = CONFIG.slipLimit;
+    const diff = left - right;
+
+    if (Math.abs(diff) > slipLimit) {
+        if (diff > 0) {
+            left -= (diff - slipLimit);
+        } else {
+            right -= (-diff - slipLimit);
+        }
+    }
+
+    return { left, right };
+}
+
+// =========================
+// A7 DYNAMIC TURN COMPENSATION
+// =========================
+
+function dynamicTurnCompensation(drive, turn) {
+    const k = CONFIG.turnCompStrength;
+    const scale = 1 - k * Math.abs(drive);
+    return { drive, turn: turn * scale };
+}
+
+// =========================
+// A8 ADAPTIVE TORQUE BIAS
+// =========================
+
+function adaptiveTorqueBias(drive, turn) {
+    const maxTurn = CONFIG.maxTurn;
+    const k = CONFIG.torqueBiasStrength;
+    const bias = k * (turn / maxTurn) * (1 - Math.abs(drive));
+    return { drive, turn, bias };
+}
+
+// =========================
+// A9 INERTIA SIMULATION
+// =========================
+
+let inertiaDrive = 0;
+let inertiaTurn = 0;
+
+function inertiaSim(drive, turn) {
+    const mass = CONFIG.inertiaMass;
+    const drag = CONFIG.inertiaDrag;
+
+    inertiaDrive = inertiaDrive * (1 - drag) + drive * mass;
+    inertiaTurn  = inertiaTurn  * (1 - drag) + turn  * mass;
+
+    return { drive: inertiaDrive, turn: inertiaTurn };
+}
+
+// ======================================================
+// TANK DRIVE JOYSTICK (A1 → A9)
+// ======================================================
 
 const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     if (!tankJoy.active) return;
 
-    // DEADZONE: ignore tiny movements
-    if (Math.abs(x) < 0.2) x = 0;
-    if (Math.abs(y) < 0.2) y = 0;
+    safetyHeartbeat();
+    
 
-    // MINIMUM TORQUE: only apply if outside deadzone
-    if (Math.abs(x) >= 0.2) x = Math.sign(x) * 0.3;
-    if (Math.abs(y) >= 0.2) y = Math.sign(y) * 0.3;
+    // A1: Deadzone + Min Torque
+    let dx = applyDeadzone(x);
+    let dy = applyDeadzone(y);
 
-    fetch("/api/motors/incremental", {
+    dx = applyMinTorque(dx);
+    dy = applyMinTorque(dy);
+
+    // A4 + A5 curves
+    const curvedX = dualRateSteer(dx);
+    const curvedY = throttleCurve(dy);
+
+    // Target values
+    const targetDrive = curvedY * CONFIG.maxTurn;
+    const targetTurn  = curvedX * CONFIG.maxTurn;
+
+    // A2 smoothing
+    smoothDrive = smoothStep(smoothDrive, targetDrive);
+    smoothTurn  = smoothStep(smoothTurn, targetTurn);
+
+    // A7 dynamic turn compensation
+    const dtc = dynamicTurnCompensation(smoothDrive, smoothTurn);
+
+    // A8 adaptive torque bias
+    const atb = adaptiveTorqueBias(dtc.drive, dtc.turn);
+
+    // Apply torque bias
+    let left  = atb.drive + atb.turn;
+    let right = atb.drive - atb.turn;
+
+    left  *= (1 + atb.bias);
+    right *= (1 - atb.bias);
+
+    // A9 inertia simulation
+    const inertia = inertiaSim(left, right);
+
+    // A6 traction control
+    const tc = tractionControl(inertia.drive, inertia.turn);
+
+
+    logUpdate({
+        dx: dx.toFixed(3),
+        dy: dy.toFixed(3),
+        curvedX: curvedX.toFixed(3),
+        curvedY: curvedY.toFixed(3),
+        smoothDrive: smoothDrive.toFixed(3),
+        smoothTurn: smoothTurn.toFixed(3),
+        dtcDrive: dtc.drive.toFixed(3),
+        dtcTurn: dtc.turn.toFixed(3),
+        bias: atb.bias.toFixed(3),
+        inertiaDrive: inertia.drive.toFixed(3),
+        inertiaTurn: inertia.turn.toFixed(3),
+        left: tc.left.toFixed(3),
+        right: tc.right.toFixed(3)
+    });
+
+
+
+
+    // Send to backend
+    safetyFetch("/api/motors/incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            drive: y * 4.0,
-            turn: x * 4.0
+            left: tc.left,
+            right: tc.right
         })
     });
 });
 
+// ======================================================
+// CAMERA PAN/TILT JOYSTICK
+// ======================================================
 
-// =========================
-// CAMERA PAN/TILT JOYSTICK (SCALED + CORRECT FIELD NAMES)
-// =========================
 const camJoy = new Joystick("camJoy", "camStick", (x, y) => {
     fetch("/api/servos/pantilt_incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            dx: x * 30.0,   // scaled pan
-            dy: y * 30.0   // scaled tilt
+            dx: x * 30.0,
+            dy: y * 30.0
         })
     });
 });
 
-
-// =========================
+// ======================================================
 // CAMERA FEED
-// =========================
+// ======================================================
+
 document.getElementById("cameraFeed").src = "/video_feed";
 
-// =========================
+// ======================================================
 // BUTTONS
-// =========================
+// ======================================================
+
 function stopTank() {
     fetch("/api/motors/stop", { method: "POST" });
-
-    tankJoy.reset();  // reset joystick visually
+    tankJoy.reset();
 }
 
-// Center camera servos AND F/G sliders
 function centerCamera() {
-    // Center via backend (pan/tilt neutral)
     fetch("/api/servos/camera_center", { method: "POST" });
 
-    // Reset sliders visually
+    camJoy.reset();
+
     const f = document.getElementById("servoF");
     const g = document.getElementById("servoG");
 
-    camJoy.reset();  // reset joystick visually
-
     if (f) {
         f.value = 0;
-        f.dispatchEvent(new Event("input"));   // triggers servos.js handler
+        f.dispatchEvent(new Event("input"));
     }
     if (g) {
         g.value = 0;
-        g.dispatchEvent(new Event("input"));   // triggers servos.js handler
+        g.dispatchEvent(new Event("input"));
     }
 }
 
@@ -81,13 +244,14 @@ function centerArm() {
         const slider = document.getElementById(`servo${name}`);
         if (!slider) return;
 
-        slider.dataset.ignore = "1";   // prevent phantom input
+        slider.dataset.ignore = "1";
         slider.value = 90;
-        lastAngles[name] = 90;         // sync internal state
+        lastAngles[name] = 90;
         slider.dispatchEvent(new Event("input"));
         slider.dataset.ignore = "0";
     });
 }
 
-
-
+window.addEventListener("load", () => {
+    tankJoy.reset();
+});

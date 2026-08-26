@@ -6,8 +6,9 @@ from adafruit_motor import motor
 # PCA9685 motor channels (from schematic)
 MOTOR_M1_IN1 = 15
 MOTOR_M1_IN2 = 14
-MOTOR_M2_IN1 = 12
-MOTOR_M2_IN2 = 13
+MOTOR_M2_IN1 = 13
+MOTOR_M2_IN2 = 12
+
 
 class MotorController:
     def __init__(self):

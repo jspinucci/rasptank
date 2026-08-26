@@ -68,6 +68,7 @@ current_tilt = 0.0
 
 current_speed = 0.0
 current_turn = 0.0
+motors_enabled = True
 
 PAN_SPEED = 3.0
 TILT_SPEED = 3.0
@@ -385,12 +386,16 @@ def servos_arm():
         log.error("servos_arm error: %s", exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+
+
+
 @app.route("/api/motors/stop", methods=["POST"])
 def motors_stop():
-    global current_speed, current_turn
+    global current_speed, current_turn, motors_enabled
+
     current_speed = 0.0
     current_turn = 0.0
-
+    motors_enabled = False
     try:
         get_motors().stop()
         draw_robot_face()
@@ -400,55 +405,284 @@ def motors_stop():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+"""
+    Doesn't work
+
 @app.route("/api/motors/incremental", methods=["POST"])
 def motors_incremental():
-    global current_speed, current_turn
+    global current_speed, current_turn, motors_enabled
+
+    print("=== RAW REQUEST BODY ===")
+    print(request.data)
 
     data = request.get_json(force=True, silent=True) or {}
-    drive = float(data.get("drive", 0.0))
-    turn = float(data.get("turn", 0.0))
 
-    current_speed += drive * DRIVE_SPEED
+    ui_left  = float(data.get("left", 0.0))
+    ui_right = float(data.get("right", 0.0))
+
+    # Strong deadband to eliminate joystick noise
+    deadband = 0.08
+    if abs(ui_left) < deadband:
+        ui_left = 0.0
+    if abs(ui_right) < deadband:
+        ui_right = 0.0
+
+    # If joystick is centered → STOP and disable motors
+    if ui_left == 0.0 and ui_right == 0.0:
+        current_speed = 0.0
+        current_turn  = 0.0
+        motors_enabled = False
+        get_motors().stop()
+        logging.info("MOTOR mode: incremental_motor_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    # If motors are disabled (STOP was pressed), ignore movement
+    if not motors_enabled:
+        current_speed = 0.0
+        current_turn  = 0.0
+        get_motors().stop()
+        logging.info("MOTOR mode: disabled_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    # Joystick moved significantly → re-enable motors
+    motors_enabled = True
+
+    # Incremental drive/turn math
+    drive = (ui_left + ui_right) / 2.0
+    turn  = (ui_left - ui_right) / 2.0
+
+    current_speed += drive * TURN_SPEED
     current_turn  += turn  * TURN_SPEED
 
     current_speed = max(-1.0, min(1.0, current_speed))
     current_turn  = max(-1.0, min(1.0, current_turn))
 
-    left = current_speed + current_turn
+    left  = current_speed + current_turn
     right = current_speed - current_turn
 
-    left = max(-1.0, min(1.0, left))
+    left  = max(-1.0, min(1.0, left))
     right = max(-1.0, min(1.0, right))
 
     try:
         get_motors().set_speed(left, right)
-        logging.info("LED mode: incremental_motor_run")
-        if abs(left) < 0.05 and abs(right) < 0.05:
-            logging.info("MOTOR mode: incremental_motor_stop") 
-            leds.set_mode("idle")
-        elif left > 0 and right > 0:
-            leds.set_mode("motor_forward")
-            logging.info("MOTOR mode: incremental_motor_forward")
-        elif left < 0 and right < 0:
-            leds.set_mode("motor_reverse")
-            logging.info("MOTOR mode: incremental_motor_reverse")
-        elif left < right:
-            leds.set_mode("motor_turn_left")
-            logging.info("MOTOR mode: incremental_motor_left")
-        elif right < left:
-            leds.set_mode("motor_turn_right")
-            logging.info("MOTOR mode: incremental_motor_right")
-
         logging.info(f"[MOTOR DEBUG] left={left:.3f}, right={right:.3f}")
-
-        return jsonify({
-            "ok": True,
-            "left": left,
-            "right": right
-        })
-
+        return jsonify({"ok": True, "left": left, "right": right})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)})
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+"""
+
+"""
+       
+       Worked but creeped 
+       
+@app.route("/api/motors/incremental", methods=["POST"])
+def motors_incremental():
+    global current_speed, current_turn, motors_enabled
+
+    print("=== RAW REQUEST BODY ===")
+    print(request.data)
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    ui_left  = float(data.get("left", 0.0))
+    ui_right = float(data.get("right", 0.0))
+
+    # Deadband: treat tiny values as zero
+    if abs(ui_left) < 0.02:
+        ui_left = 0.0
+    if abs(ui_right) < 0.02:
+        ui_right = 0.0
+
+    # If joystick is centered, just keep motors stopped and reset integrator
+    if ui_left == 0.0 and ui_right == 0.0:
+        current_speed = 0.0
+        current_turn  = 0.0
+        get_motors().stop()
+        logging.info("MOTOR mode: incremental_motor_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    # Joystick moved → re‑enable motors
+    motors_enabled = True
+
+    if not motors_enabled:
+        # Safety: if somehow disabled, force stop
+        current_speed = 0.0
+        current_turn  = 0.0
+        get_motors().stop()
+        logging.info("MOTOR mode: disabled_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    drive = (ui_left + ui_right) / 2.0
+    turn  = (ui_left - ui_right) / 2.0
+
+    current_speed += drive * TURN_SPEED
+    current_turn  += turn  * TURN_SPEED
+
+    current_speed = max(-1.0, min(1.0, current_speed))
+    current_turn  = max(-1.0, min(1.0, current_turn))
+
+    left  = current_speed + current_turn
+    right = current_speed - current_turn
+
+    left  = max(-1.0, min(1.0, left))
+    right = max(-1.0, min(1.0, right))
+
+    try:
+        get_motors().set_speed(left, right)
+        logging.info(f"[MOTOR DEBUG] left={left:.3f}, right={right:.3f}")
+        return jsonify({"ok": True, "left": left, "right": right})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+"""
+
+"""
+            worked, still creeps
+      
+@app.route("/api/motors/incremental", methods=["POST"])
+def motors_incremental():
+    global current_speed, current_turn, motors_enabled
+
+    print("=== RAW REQUEST BODY ===")
+    print(request.data)
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    ui_left  = float(data.get("left", 0.0))
+    ui_right = float(data.get("right", 0.0))
+
+    # Strong deadband to eliminate joystick noise
+    deadband = 0.20
+    if abs(ui_left) < deadband:
+        ui_left = 0.0
+    if abs(ui_right) < deadband:
+        ui_right = 0.0
+
+    # If joystick is centered → STOP and disable motors
+    if ui_left == 0.0 and ui_right == 0.0:
+        current_speed = 0.0
+        current_turn  = 0.0
+        motors_enabled = False
+        get_motors().stop()
+        logging.info("MOTOR mode: incremental_motor_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    # If motors are disabled (STOP was pressed), only re-enable
+    # when joystick moves significantly (not noise)
+    if not motors_enabled:
+        # Joystick moved significantly → re-enable motors
+        motors_enabled = True
+        current_speed = 0.0
+        current_turn  = 0.0
+        logging.info("MOTOR mode: motors_reenabled")
+
+    # Incremental drive/turn math
+    drive = (ui_left + ui_right) / 2.0
+    turn  = (ui_left - ui_right) / 2.0
+
+    current_speed += drive * TURN_SPEED
+    current_turn  += turn  * TURN_SPEED
+
+    current_speed = max(-1.0, min(1.0, current_speed))
+    current_turn  = max(-1.0, min(1.0, current_turn))
+
+    left  = current_speed + current_turn
+    right = current_speed - current_turn
+
+    left  = max(-1.0, min(1.0, left))
+    right = max(-1.0, min(1.0, right))
+
+    try:
+        get_motors().set_speed(left, right)
+        logging.info(f"[MOTOR DEBUG] left={left:.3f}, right={right:.3f}")
+        return jsonify({"ok": True, "left": left, "right": right})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+"""
+
+
+@app.route("/api/motors/incremental", methods=["POST"])
+def motors_incremental():
+    print("=== RAW REQUEST BODY ===")
+    print(request.data)
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    ui_left  = float(data.get("left", 0.0))
+    ui_right = float(data.get("right", 0.0))
+
+    # Strong deadband to eliminate joystick drift
+    deadband = 0.20
+    if abs(ui_left) < deadband:
+        ui_left = 0.0
+    if abs(ui_right) < deadband:
+        ui_right = 0.0
+
+    # If joystick centered → STOP
+    if ui_left == 0.0 and ui_right == 0.0:
+        get_motors().stop()
+        logging.info("MOTOR mode: incremental_motor_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    # Direct mapping (NO accumulation)
+    left  = max(-1.0, min(1.0, ui_left))
+    right = max(-1.0, min(1.0, ui_right))
+
+    try:
+        get_motors().set_speed(left, right)
+        logging.info(f"[MOTOR DEBUG] left={left:.3f}, right={right:.3f}")
+        return jsonify({"ok": True, "left": left, "right": right})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+
+"""
+
+@app.route("/api/motors/incremental", methods=["POST"])
+def motors_incremental():
+    print("=== RAW REQUEST BODY ===")
+    print(request.data)
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    ui_left  = float(data.get("left", 0.0))
+    ui_right = float(data.get("right", 0.0))
+
+    # Strong deadband to eliminate joystick noise
+    deadband = 0.20
+    if abs(ui_left) < deadband:
+        ui_left = 0.0
+    if abs(ui_right) < deadband:
+        ui_right = 0.0
+
+    # If joystick is centered → STOP
+    if ui_left == 0.0 and ui_right == 0.0:
+        get_motors().stop()
+        logging.info("MOTOR mode: incremental_motor_stop")
+        return jsonify({"ok": True, "left": 0.0, "right": 0.0})
+
+    # NO INTEGRATOR — direct mapping
+    drive = (ui_left + ui_right) / 2.0
+    turn  = (ui_left - ui_right) / 2.0
+
+    left  = drive + turn
+    right = drive - turn
+
+    # Clamp
+    left  = max(-1.0, min(1.0, left))
+    right = max(-1.0, min(1.0, right))
+
+    try:
+        get_motors().set_speed(left, right)
+        logging.info(f"[MOTOR DEBUG] left={left:.3f}, right={right:.3f}")
+        return jsonify({"ok": True, "left": left, "right": right})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+"""
 
 @app.route("/api/servos/pantilt_incremental", methods=["POST"])
 def servos_pantilt_incremental():
@@ -479,48 +713,6 @@ def servos_pantilt_incremental():
         return jsonify({"ok": True, "pan": current_pan, "tilt": current_tilt})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
-
-
-
-"""
-@app.route("/api/servos/pantilt_incremental", methods=["POST"])
-def servos_pantilt_incremental():
-    global current_pan, current_tilt
-
-    data = request.get_json(force=True, silent=True) or {}
-    dx = float(data.get("dx", 0.0))
-    dy = float(data.get("dy", 0.0))
-
-    # If movement is extremely small, treat it as zero
-    if abs(dx) < 0.01 and abs(dy) < 0.01:
-        dx = 0.0
-        dy = 0.0
-        leds.set_mode("idle")
-        logging.info("LED mode: idle")
-
-    else:
-        leds.set_mode("pantilt_motion")
-        
-    current_pan += dx * PAN_SPEED
-    current_tilt += dy * TILT_SPEED
-
-    current_pan = max(-90, min(90, current_pan))
-    current_tilt = max(-45, min(45, current_tilt))
-
-    try:
-        get_servos().set_pan_tilt(current_pan, current_tilt)
-        logging.info("LED mode: pantilt_motion_inc")
-#       leds.set_mode("pantilt_motion")
-        draw_robot_face(eye_dx=8)
-        return jsonify({
-            "ok": True,
-            "pan": current_pan,
-            "tilt": current_tilt
-        })
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-
-"""
 
 @app.route("/api/servos/camera_center", methods=["POST"])
 def servos_center_camera():

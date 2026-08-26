@@ -45,6 +45,28 @@ button:hover {
     background: #5599ff;
 }
 
+/* ================================
+   Tank Drive Stop Button
+================================ */
+#tankStopButton {
+    background-color: #cc0000;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+#tankStopButton:hover {
+    background-color: #ff3333;
+}
+
+#tankStopButton:active {
+    background-color: #aa0000;
+}
 
 
 /* ================================

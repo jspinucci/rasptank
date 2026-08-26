@@ -1,4 +1,6 @@
-// joystick.js — actual joystick implementation
+// joystick.js — drift‑proof joystick implementation
+
+window.debugMode = false;
 
 function jsDebug(msg) {
     fetch("/js_debug", {
@@ -22,26 +24,33 @@ class Joystick {
 
         this.active = false;
 
-	this.container.addEventListener("mousedown", this.start.bind(this));
-	this.container.addEventListener("touchstart", (event) => {
-	    event.preventDefault();
-	    this.start(event);
-	}, { passive: false });
+        // MOUSE EVENTS
+        this.container.addEventListener("mousedown", this.start.bind(this));
+        document.addEventListener("mousemove", (e) => {
+            if (this.active) this.move(e);
+        });
+        document.addEventListener("mouseup", this.end.bind(this));
 
-	this.container.addEventListener("mousemove", this.move.bind(this));
-	this.container.addEventListener("touchmove", (event) => {
-	    event.preventDefault();
-	    this.move(event);
-	}, { passive: false });
+        // TOUCH EVENTS
+        this.container.addEventListener("touchstart", (event) => {
+            event.preventDefault();
+            this.start(event.touches[0]);
+        }, { passive: false });
 
-	document.addEventListener("mouseup", this.end.bind(this));
-	document.addEventListener("touchend", (event) => {
-	    this.end(event);
-	}, { passive: true });
+        document.addEventListener("touchmove", (event) => {
+            if (!this.active) return;
+            event.preventDefault();
+            this.move(event.touches[0]);
+        }, { passive: false });
+
+        document.addEventListener("touchend", (event) => {
+            event.preventDefault();
+            this.end(event);
+        }, { passive: false });
     }
 
     start(event) {
-	jsDebug("Joystick started");
+        if (window.debugMode) jsDebug("Joystick started");
         this.active = true;
         this.move(event);
     }
@@ -50,8 +59,8 @@ class Joystick {
         if (!this.active) return;
 
         const rect = this.container.getBoundingClientRect();
-        const clientX = event.touches ? event.touches[0].clientX : event.clientX;
-        const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+        const clientX = event.clientX;
+        const clientY = event.clientY;
 
         let x = clientX - rect.left;
         let y = clientY - rect.top;
@@ -60,6 +69,11 @@ class Joystick {
 
         let dx = x - this.centerX;
         let dy = y - this.centerY;
+
+        // --- TOUCH DRIFT FIX ---
+        const driftLimit = 4; // pixels of allowed jitter
+        if (Math.abs(dx) < driftLimit) dx = 0;
+        if (Math.abs(dy) < driftLimit) dy = 0;
 
         dx = Math.max(-max, Math.min(max, dx));
         dy = Math.max(-max, Math.min(max, dy));
@@ -72,32 +86,27 @@ class Joystick {
 
         this.callback(normX, normY);
     }
+
     reset() {
-	jsDebug("Joystick reset");
-	jsDebug(`RESET ${this.container.id}`);
+        if (window.debugMode) jsDebug("Joystick reset");
         this.active = false;
-        this.rawX = 0;
-        this.rawY = 0;
 
         this.stick.style.left = `${this.centerX - this.stick.offsetWidth / 2}px`;
         this.stick.style.top = `${this.centerY - this.stick.offsetHeight / 2}px`;
 
-        // Send zero movement to backend
         this.callback(0, 0);
     }
 
-
-
     end() {
-        jsDebug("Joystick end");
+	if(window.debugMode) jsDebug("Joystick end");
         if(this.container.id === "tankJoy")
 	{
-            jsDebug(`Joystick end at ${this.container.id}`);
+            if(window.debugMode) jsDebug(`Joystick end at ${this.container.id}`);
             stopTank();
 	    this.reset();
         }
         else {
-            jsDebug(`Joystick end else ${this.container.id}`);
+            if(window.debugMode) jsDebug(`Joystick end else ${this.container.id}`);
             this.active = false;
             this.callback(0, 0);
         }
