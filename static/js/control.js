@@ -3,6 +3,18 @@
 // Clean, stable, hardware-independent
 // ======================================================
 
+
+window.debugMode = true;
+
+function jsControl(msg) {
+    fetch("/js_debug", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ctl_message: msg })
+    });
+}
+
+
 // =========================
 // A1 DEADZONE + MIN TORQUE
 // =========================
@@ -118,7 +130,6 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     if (!tankJoy.active) return;
 
     safetyHeartbeat();
-    
 
     // A1: Deadzone + Min Torque
     let dx = applyDeadzone(x);
@@ -127,58 +138,53 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     dx = applyMinTorque(dx);
     dy = applyMinTorque(dy);
 
-    // A4 + A5 curves
-    const curvedX = dualRateSteer(dx);
-    const curvedY = throttleCurve(dy);
+    // A2 smoothing (applied to raw dx/dy)
+    smoothDrive = smoothStep(smoothDrive, dy);
+    smoothTurn  = smoothStep(smoothTurn, dx);
 
-    // Target values
-    const targetDrive = curvedY * CONFIG.maxTurn;
-    const targetTurn  = curvedX * CONFIG.maxTurn;
-
-    // A2 smoothing
-    smoothDrive = smoothStep(smoothDrive, targetDrive);
-    smoothTurn  = smoothStep(smoothTurn, targetTurn);
+    // A3/A4/A5 steering + throttle curves
+    const curvedTurn  = dualRateSteer(smoothTurn);
+    const curvedDrive = throttleCurve(smoothDrive);
 
     // A7 dynamic turn compensation
-    const dtc = dynamicTurnCompensation(smoothDrive, smoothTurn);
+    const dtc = dynamicTurnCompensation(curvedDrive, curvedTurn);
 
     // A8 adaptive torque bias
     const atb = adaptiveTorqueBias(dtc.drive, dtc.turn);
 
-    // Apply torque bias
-    let left  = atb.drive + atb.turn;
-    let right = atb.drive - atb.turn;
+    let drive = atb.drive;
+    let turn  = atb.turn;
 
-    left  *= (1 + atb.bias);
-    right *= (1 - atb.bias);
+    drive *= (1 + atb.bias);
+    turn  *= (1 - atb.bias);
 
     // A9 inertia simulation
-    const inertia = inertiaSim(left, right);
+    const inertia = inertiaSim(drive, turn);
 
-    // A6 traction control
-    const tc = tractionControl(inertia.drive, inertia.turn);
+    // Final motor mixing (correct place)
+    let left  = inertia.drive + inertia.turn;
+    let right = inertia.drive - inertia.turn;
+
+    // A6 traction control (correct place)
+    const tc = tractionControl(left, right);
 
 
     logUpdate({
         dx: dx.toFixed(3),
         dy: dy.toFixed(3),
-        curvedX: curvedX.toFixed(3),
-        curvedY: curvedY.toFixed(3),
         smoothDrive: smoothDrive.toFixed(3),
         smoothTurn: smoothTurn.toFixed(3),
+        curvedDrive: curvedDrive.toFixed(3),
+        curvedTurn: curvedTurn.toFixed(3),
         dtcDrive: dtc.drive.toFixed(3),
         dtcTurn: dtc.turn.toFixed(3),
         bias: atb.bias.toFixed(3),
         inertiaDrive: inertia.drive.toFixed(3),
         inertiaTurn: inertia.turn.toFixed(3),
-        left: tc.left.toFixed(3),
-        right: tc.right.toFixed(3)
+        left: left.toFixed(3),
+        right: right.toFixed(3)
     });
 
-
-
-
-    // Send to backend
     safetyFetch("/api/motors/incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -216,12 +222,15 @@ document.getElementById("cameraFeed").src = "/video_feed";
 
 function stopTank() {
     fetch("/api/motors/stop", { method: "POST" });
+    if(window.debugMode) jsControl("Stop Tank FIRED");
     tankJoy.reset();
 }
 
 function centerCamera() {
     fetch("/api/servos/camera_center", { method: "POST" });
 
+    if(window.debugMode) jsControl("Camera Center FIRED");
+    console.log("Camera Center FIRED");
     camJoy.reset();
 
     const f = document.getElementById("servoF");
@@ -239,6 +248,7 @@ function centerCamera() {
 
 function centerArm() {
     fetch("/api/servos/center_arm", { method: "POST" });
+    if(window.debugMode) jsControl("Center Arm FIRED");
 
     ["A", "B", "C", "D", "E"].forEach(name => {
         const slider = document.getElementById(`servo${name}`);

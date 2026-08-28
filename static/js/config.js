@@ -1,29 +1,29 @@
 const CONFIG = {
     // A1
-    deadzone: 0.2,
-    minTorque: 0.3,
+    deadzone: 0.15,
+    minTorque: 0.25,
 
-    // A2
-    smoothingAccel: 0.15,
+    // A2 (light smoothing)
+    smoothingAccel: 0.12,
 
-    // A3/A4
-    steeringExpoStrength: 1.0,   // reserved for future tuning
-    steeringDualRateBlend: 1.0,  // reserved for future tuning
+    // A3/A4 (mild steering curve)
+    steeringExpoStrength: 1.0,
+    steeringDualRateBlend: 1.0,
 
-    // A5
-    throttleCurveStrength: 0.4,
+    // A5 (mild throttle curve)
+    throttleCurveStrength: 0.35,
 
-    // A6
-    slipLimit: 0.35,
+    // A6 (mild traction control)
+    slipLimit: 0.30,
 
-    // A7
-    turnCompStrength: 0.4,
+    // A7 (mild turn compensation)
+    turnCompStrength: 0.35,
 
-    // A8
-    torqueBiasStrength: 0.25,
-    maxTurn: 4.0,
+    // A8 (mild torque bias)
+    torqueBiasStrength: 0.20,
+    maxTurn: 1.0,
 
-    // A9
-    inertiaMass: 0.12,
-    inertiaDrag: 0.08
+    // A9 (mild inertia)
+    inertiaMass: 0.10,
+    inertiaDrag: 0.10
 };

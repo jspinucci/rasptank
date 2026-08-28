@@ -1,6 +1,6 @@
 // joystick.js — drift‑proof joystick implementation
 
-window.debugMode = false;
+window.debugMode = true;
 
 function jsDebug(msg) {
     fetch("/js_debug", {
@@ -37,13 +37,14 @@ class Joystick {
             this.start(event.touches[0]);
         }, { passive: false });
 
-        document.addEventListener("touchmove", (event) => {
+        this.container.addEventListener("touchmove", (event) => {
             if (!this.active) return;
             event.preventDefault();
             this.move(event.touches[0]);
         }, { passive: false });
 
-        document.addEventListener("touchend", (event) => {
+        // FIX: only listen for touchend on THIS joystick
+        this.container.addEventListener("touchend", (event) => {
             event.preventDefault();
             this.end(event);
         }, { passive: false });
@@ -71,7 +72,7 @@ class Joystick {
         let dy = y - this.centerY;
 
         // --- TOUCH DRIFT FIX ---
-        const driftLimit = 4; // pixels of allowed jitter
+        const driftLimit = 4;
         if (Math.abs(dx) < driftLimit) dx = 0;
         if (Math.abs(dy) < driftLimit) dy = 0;
 
@@ -97,16 +98,18 @@ class Joystick {
         this.callback(0, 0);
     }
 
-    end() {
-	if(window.debugMode) jsDebug("Joystick end");
-        if(this.container.id === "tankJoy")
-	{
-            if(window.debugMode) jsDebug(`Joystick end at ${this.container.id}`);
+    end(event) {
+        if (window.debugMode) jsDebug("Joystick end");
+
+        // Prevent bubbling
+        if (event) event.stopPropagation();
+
+        if (this.container.id === "tankJoy" && this.active) {
+            if (window.debugMode) jsDebug(`Joystick end at ${this.container.id}`);
             stopTank();
-	    this.reset();
-        }
-        else {
-            if(window.debugMode) jsDebug(`Joystick end else ${this.container.id}`);
+            this.reset();
+        } else {
+            if (window.debugMode) jsDebug(`Joystick end else ${this.container.id}`);
             this.active = false;
             this.callback(0, 0);
         }
