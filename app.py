@@ -615,7 +615,7 @@ def motors_incremental():
     ui_right = float(data.get("right", 0.0))
 
     # Strong deadband to eliminate joystick drift
-    deadband = 0.20
+    deadband = 0.05
     if abs(ui_left) < deadband:
         ui_left = 0.0
     if abs(ui_right) < deadband:

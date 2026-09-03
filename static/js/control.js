@@ -122,6 +122,45 @@ function inertiaSim(drive, turn) {
     return { drive: inertiaDrive, turn: inertiaTurn };
 }
 
+const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
+    if (!tankJoy.active) return;
+
+    safetyHeartbeat();
+
+    y = -y;  // forward = positive
+
+    // A1: Deadzone + Min Torque
+    let drive = applyDeadzone(y);
+    let turn  = applyDeadzone(x);
+
+    // A2 smoothing (applied to raw dx/dy)
+    smoothDrive = smoothStep(smoothDrive, drive);
+    smoothTurn  = smoothStep(smoothTurn, turn);
+
+    drive = smoothDrive;
+    turn = smoothTurn;
+
+
+
+//    drive = applyMinTorque(drive);
+    // DO NOT apply minTorque to turn
+
+    // Direct mixing (baseline)
+    let left  = drive + turn;
+    let right = drive - turn;
+
+    // Send directly
+    safetyFetch("/api/motors/incremental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ left, right })
+    });
+});
+
+
+
+/*
+
 // ======================================================
 // TANK DRIVE JOYSTICK (A1 → A9)
 // ======================================================
@@ -131,16 +170,18 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
 
     safetyHeartbeat();
 
+    y = -y;
+
     // A1: Deadzone + Min Torque
     let dx = applyDeadzone(x);
     let dy = applyDeadzone(y);
 
-    dx = applyMinTorque(dx);
-    dy = applyMinTorque(dy);
-
     // A2 smoothing (applied to raw dx/dy)
     smoothDrive = smoothStep(smoothDrive, dy);
     smoothTurn  = smoothStep(smoothTurn, dx);
+
+    smoothDrive = applyMinTorque(smoothDrive);
+    smoothTurn = applyMinTorque(smoothTurn);
 
     // A3/A4/A5 steering + throttle curves
     const curvedTurn  = dualRateSteer(smoothTurn);
@@ -168,6 +209,11 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
     // A6 traction control (correct place)
     const tc = tractionControl(left, right);
 
+   // Fix 2 - clamp tiny values
+    left = Math.abs(tc.left) < 0.05 ? 0 : tc.left;
+    right = Math.abs(tc.right) < 0.05 ? 0 : tc.right;
+
+
 
     logUpdate({
         dx: dx.toFixed(3),
@@ -189,11 +235,14 @@ const tankJoy = new Joystick("tankJoy", "tankStick", (x, y) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            left: tc.left,
-            right: tc.right
+            left,
+            right
         })
     });
 });
+
+
+*/
 
 // ======================================================
 // CAMERA PAN/TILT JOYSTICK
